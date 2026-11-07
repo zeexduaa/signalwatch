@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,7 @@ def run_round(
     notifiers: list[Notifier],
     get: Fetcher | None = None,
     dry_run: bool = False,
+    now: float | None = None,
 ) -> RoundResult:
     """Checks every watch once and sends alerts. Updates ``state`` in place.
 
@@ -64,6 +66,7 @@ def run_round(
     doesn't stop the rest. With ``dry_run`` nothing is sent and ``state`` is unchanged.
     """
     result = RoundResult()
+    now = time.time() if now is None else now
     for watch in config.watches:
         try:
             bars = fetch_bars(watch.source, watch.symbol, watch.interval, config.history, get)
@@ -80,7 +83,7 @@ def run_round(
             if evaluation is None:
                 continue  # not enough history for this rule yet
             key = rule_id(watch.symbol, rule)
-            fire, new_state = decide(rule, evaluation, state.get(key))
+            fire, new_state = decide(rule, evaluation, state.get(key), now)
             if not dry_run:
                 state[key] = new_state
             if fire:

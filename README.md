@@ -87,10 +87,11 @@ The full example is in [`examples/watchlist.toml`](examples/watchlist.toml).
 | `rsi_above` / `rsi_below`      | `value`, `period` (default 14)   | RSI is above / below `value`                         |
 | `change_above` / `change_below`| `value` (%), `bars` (default 1)  | price moved up / down at least `value`% over `bars`  |
 | `cross_above` / `cross_below`  | `over`, `line` (default `price`) | `line` crosses `over` on the latest bar              |
+| `new_high` / `new_low`         | `bars` (default 20)              | the last close is the highest / lowest in `bars` bars |
 
-`line` and `over` are `price`, `sma:N` or `ema:N`. For example, `line = "ema:12"`, `over = "ema:26"` is a classic moving-average crossover. Every rule can have a `note` that's added to its alert.
+`line` and `over` are `price`, `sma:N` or `ema:N`. For example, `line = "ema:12"`, `over = "ema:26"` is a classic moving-average crossover. Every rule can have a `note` that's added to its alert, and a `cooldown` such as `"30m"`, `"6h"` or `"1d"` so it alerts at most once in that time.
 
-**When alerts repeat:** a level rule (price, RSI, change) alerts once when it becomes true and again only after it has been false. A cross alerts once for the bar it happened on. This is remembered in `.signalwatch/state.json`, so restarting doesn't resend old alerts.
+**When alerts repeat:** a level rule (price, RSI, change) alerts once when it becomes true and again only after it has been false. A cross or a new high/low alerts once for the bar it happened on. A `cooldown` then holds back any alert that comes too soon after the previous one. This is remembered in `.signalwatch/state.json`, so restarting doesn't resend old alerts.
 
 ### Price sources
 
