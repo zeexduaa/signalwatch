@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Watching the same symbol on two intervals or sources no longer shares alert state, which made one silence the other (#24). State saved by older versions is carried over.
+- `signalwatch show` explains when there are no closed bars instead of crashing (#25).
+- Alert messages show full prices and thresholds (`101,234.56`) instead of rounding to 6 digits (#26).
+
 ### Added
 
 - `new_high` / `new_low` rules: the highest or lowest close in N bars (default 20).

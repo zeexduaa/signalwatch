@@ -90,6 +90,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
 def cmd_show(args: argparse.Namespace) -> int:
     bars = fetch_bars(args.source, args.symbol, args.interval, 300)
+    if not bars:
+        raise ProviderError(f"no closed {args.interval} bars for {args.symbol.upper()} yet")
     closes = [b.close for b in bars]
     last = bars[-1]
 
