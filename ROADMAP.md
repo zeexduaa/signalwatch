@@ -17,9 +17,9 @@ Sizes are rough guesses (S = a few hours, M = about a day, L = several days, XL 
 - [ ] **MACD** rules: MACD line crossing its signal line, histogram turning positive/negative (M)
 - [ ] **Bollinger Bands**: price closing outside the bands (M)
 - [ ] **Volume spikes**: volume above N times its average (needs volume in bars) (M)
-- [ ] **New highs and lows**: highest or lowest close in N bars (S)
+- [x] **New highs and lows**: highest or lowest close in N bars (S)
 - [ ] **Combine conditions** with `all = [...]` / `any = [...]` in one rule (L)
-- [ ] **Cooldown** setting so a rule can't alert more than once every N hours (S)
+- [x] **Cooldown** setting so a rule can't alert more than once every N hours (S)
 
 ## v0.3: reliability
 

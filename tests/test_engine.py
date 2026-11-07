@@ -90,3 +90,18 @@ def test_state_round_trip_and_damage(tmp_path):
     assert load_state(path) == {}
     assert load_state(tmp_path / "missing.json") == {}
     assert list(path.parent.glob(".state-*")) == []  # no temp files left behind
+
+
+def test_run_round_passes_the_time_to_cooldowns():
+    config = parse_config(
+        '[[watch]]\nsymbol = "aaa.us"\nsource = "stooq"\n'
+        '[[watch.rule]]\nkind = "price_above"\nvalue = 100\ncooldown = "1h"\n'
+    )
+    rec = Recorder()
+    state = {}
+    run_round(config, state, [rec.notifier()], get=fake_market({"aaa.us": [101]}), now=1000)
+    run_round(config, state, [rec.notifier()], get=fake_market({"aaa.us": [99]}), now=1500)
+    run_round(config, state, [rec.notifier()], get=fake_market({"aaa.us": [102]}), now=2000)  # within the hour
+    run_round(config, state, [rec.notifier()], get=fake_market({"aaa.us": [99]}), now=5000)
+    run_round(config, state, [rec.notifier()], get=fake_market({"aaa.us": [103]}), now=5100)
+    assert len(rec.sent) == 2

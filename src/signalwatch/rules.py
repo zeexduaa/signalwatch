@@ -5,12 +5,16 @@ There are two kinds of rule:
 * **Level** rules (price above/below, RSI above/below, big moves) are true for
   as long as the condition holds. They alert once when they become true and
   stay quiet until they have been false again.
-* **Cross** rules (one line crossing another) are events on a single bar. They
-  alert once for the bar where the cross happened.
+* **Event** rules (one line crossing another, a new high or low) happen on a
+  single bar. They alert once for the bar where it happened.
+
+Any rule can also have a ``cooldown`` such as "6h", so it alerts at most once in
+that time however often its condition comes and goes.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,11 +22,22 @@ from .indicators import moving_average, pct_change, rsi
 
 LEVEL_KINDS = {"price_above", "price_below", "rsi_above", "rsi_below", "change_above", "change_below"}
 CROSS_KINDS = {"cross_above", "cross_below"}
-KINDS = LEVEL_KINDS | CROSS_KINDS
+EXTREME_KINDS = {"new_high", "new_low"}
+EVENT_KINDS = CROSS_KINDS | EXTREME_KINDS
+KINDS = LEVEL_KINDS | EVENT_KINDS
+DEFAULT_EXTREME_BARS = 20
 
 
 class RuleError(ValueError):
     """A rule in the watchlist doesn't make sense."""
+
+
+def parse_duration(text: str) -> int:
+    """"30m", "6h", "2d" -> seconds."""
+    match = re.fullmatch(r"\s*(\d+)\s*([smhd])\s*", str(text).lower())
+    if not match or int(match.group(1)) == 0:
+        raise RuleError(f'cooldown must look like "30m", "6h" or "1d", got {text!r}')
+    return int(match.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
 
 
 @dataclass(frozen=True)
@@ -50,13 +65,15 @@ class Rule:
     line: str = "price"
     over: str | None = None
     note: str = ""
+    #: Minimum seconds between two alerts from this rule (0 = no limit).
+    cooldown: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Rule:
         kind = data.get("kind")
         if kind not in KINDS:
             raise RuleError(f"unknown rule kind {kind!r}; choose one of: {', '.join(sorted(KINDS))}")
-        known = {"kind", "value", "period", "bars", "line", "over", "note"}
+        known = {"kind", "value", "period", "bars", "line", "over", "note", "cooldown"}
         extra = set(data) - known
         if extra:
             raise RuleError(f"{kind}: unknown setting(s) {', '.join(sorted(extra))}")
@@ -71,10 +88,14 @@ class Rule:
                 raise RuleError(f"{kind}: 'value' is a percentage and must be more than 0")
 
         period = data.get("period", 14)
-        bars = data.get("bars", 1)
+        bars = data.get("bars", DEFAULT_EXTREME_BARS if kind in EXTREME_KINDS else 1)
         for name, number in (("period", period), ("bars", bars)):
             if not isinstance(number, int) or isinstance(number, bool) or number < 1:
                 raise RuleError(f"{kind}: '{name}' must be a whole number of at least 1")
+        if kind in EXTREME_KINDS and bars < 2:
+            raise RuleError(f"{kind}: 'bars' must be at least 2 (it's how far back to look)")
+
+        cooldown = parse_duration(data["cooldown"]) if "cooldown" in data else 0
 
         line = str(data.get("line", "price"))
         over = data.get("over")
@@ -98,11 +119,13 @@ class Rule:
             line=line,
             over=str(over) if over is not None else None,
             note=str(data.get("note", "")),
+            cooldown=cooldown,
         )
 
     @property
-    def is_cross(self) -> bool:
-        return self.kind in CROSS_KINDS
+    def is_event(self) -> bool:
+        """True for rules that happen on one bar (crosses, new highs/lows)."""
+        return self.kind in EVENT_KINDS
 
     def describe(self) -> str:
         """Short human description, e.g. "RSI(14) above 70" or "price crosses above sma:200"."""
@@ -116,6 +139,8 @@ class Rule:
             "change_below": f"down {v:g}% or more over {self.bars} bar(s)" if v is not None else "",
             "cross_above": f"{self.line} crosses above {self.over}",
             "cross_below": f"{self.line} crosses below {self.over}",
+            "new_high": f"highest close in {self.bars} bars",
+            "new_low": f"lowest close in {self.bars} bars",
         }[self.kind]
 
     def evaluate(self, bars: list[Bar]) -> Evaluation | None:
@@ -145,6 +170,16 @@ class Rule:
                 return None
             active = change >= self.value if self.kind == "change_above" else change <= -self.value
             return Evaluation(active, None, f"moved {change:+.2f}% over {self.bars} bar(s)")
+
+        if self.kind in EXTREME_KINDS:
+            if len(closes) < self.bars:
+                return None
+            earlier = closes[-self.bars:-1]
+            if self.kind == "new_high":
+                made = last > max(earlier)
+            else:
+                made = last < min(earlier)
+            return Evaluation(made, bars[-1].time if made else None, f"price {last:g} is the {self.describe()}")
 
         # Cross rules: compare the last two bars.
         assert self.over is not None
@@ -189,15 +224,29 @@ def rule_id(symbol: str, rule: Rule) -> str:
     return "|".join(parts)
 
 
-def decide(rule: Rule, evaluation: Evaluation, previous: dict[str, Any] | None) -> tuple[bool, dict[str, Any]]:
+def decide(
+    rule: Rule, evaluation: Evaluation, previous: dict[str, Any] | None, now: float = 0.0
+) -> tuple[bool, dict[str, Any]]:
     """Should this evaluation alert, given what was remembered last time? Returns (fire, new_state).
 
-    Level rules fire when they switch from false to true. Cross rules fire once per bar
-    they cross on, so running every few minutes during that bar doesn't repeat the alert.
+    Level rules fire when they switch from false to true. Event rules fire once per bar
+    they happen on, so running every few minutes during that bar doesn't repeat the alert.
+    A cooldown then holds back any alert that comes too soon after the last one.
+    ``now`` is the current time in seconds since the epoch.
     """
     previous = previous or {}
-    if rule.is_cross:
+    if rule.is_event:
         fire = evaluation.active and evaluation.event != previous.get("last_event")
-        return fire, {"last_event": evaluation.event if fire else previous.get("last_event")}
-    fire = evaluation.active and not previous.get("active", False)
-    return fire, {"active": evaluation.active}
+        new_state: dict[str, Any] = {"last_event": evaluation.event if fire else previous.get("last_event")}
+    else:
+        fire = evaluation.active and not previous.get("active", False)
+        new_state = {"active": evaluation.active}
+
+    last_fired = previous.get("last_fired")
+    if fire and rule.cooldown and isinstance(last_fired, (int, float)) and now - last_fired < rule.cooldown:
+        fire = False  # too soon; the condition is still noted so it won't fire late
+    if fire:
+        new_state["last_fired"] = now
+    elif isinstance(last_fired, (int, float)):
+        new_state["last_fired"] = last_fired
+    return fire, new_state

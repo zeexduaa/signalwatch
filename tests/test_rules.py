@@ -1,6 +1,6 @@
 import pytest
 
-from signalwatch.rules import Alert, Bar, Rule, RuleError, decide, format_price, rule_id
+from signalwatch.rules import Alert, Bar, Rule, RuleError, decide, format_price, parse_duration, rule_id
 
 
 def bars(*closes, start=1):
@@ -70,6 +70,9 @@ def test_cross_needs_enough_history():
         ({"kind": "cross_above", "over": "wma:3"}, "moving average"),
         ({"kind": "cross_above", "line": "sma:5", "over": "sma:5"}, "can never cross"),
         ({"kind": "price_above", "value": 1, "colour": "red"}, "unknown setting"),
+        ({"kind": "new_high", "bars": 1}, "at least 2"),
+        ({"kind": "price_above", "value": 1, "cooldown": "soon"}, "cooldown must look like"),
+        ({"kind": "price_above", "value": 1, "cooldown": "0h"}, "cooldown must look like"),
     ],
 )
 def test_bad_rules_are_explained(data, message):
@@ -95,7 +98,7 @@ def test_cross_rules_alert_once_per_bar():
     fire1, state = decide(rule, ev, None)
     fire2, state = decide(rule, rule.evaluate(history), state)  # same bar, checked again
     assert (fire1, fire2) == (True, False)
-    assert state == {"last_event": "2026-01-04"}
+    assert state["last_event"] == "2026-01-04"
 
 
 def test_rule_id_and_alert_text():
@@ -119,3 +122,54 @@ def test_format_price():
     assert format_price(1) == "1.00"
     assert format_price(0.00001234) == "1.234e-05"
     assert format_price(0.5) == "0.5"
+
+
+def test_new_high_and_low():
+    high = Rule.from_dict({"kind": "new_high", "bars": 4})
+    low = Rule.from_dict({"kind": "new_low", "bars": 4})
+    assert high.bars == 4 and high.is_event
+    ev = high.evaluate(bars(5, 3, 4, 6))
+    assert ev is not None and ev.active and ev.event == "2026-01-04"
+    assert ev.message == "price 6 is the highest close in 4 bars"
+    assert not high.evaluate(bars(5, 3, 4, 5)).active  # equal to the old high isn't a new one
+    assert low.evaluate(bars(5, 3, 4, 2)).active
+    assert not low.evaluate(bars(9, 1, 4, 2)).active  # 1 was lower, within the window
+    assert low.evaluate(bars(1, 9, 4, 3, 2)).active  # the 1 has dropped out of the 4-bar window
+    assert high.evaluate(bars(1, 2, 3)) is None  # not enough history
+
+
+def test_new_high_defaults_to_20_bars():
+    assert Rule.from_dict({"kind": "new_high"}).bars == 20
+    assert Rule.from_dict({"kind": "new_high"}).describe() == "highest close in 20 bars"
+
+
+def test_parse_duration():
+    assert parse_duration("30m") == 1800
+    assert parse_duration(" 6H ") == 21600
+    assert parse_duration("2d") == 172800
+
+
+def test_cooldown_holds_back_level_alerts():
+    rule = Rule.from_dict({"kind": "price_above", "value": 100, "cooldown": "1h"})
+    assert rule.cooldown == 3600
+    state, fired = None, []
+    # (close, seconds) - crosses above at 0s, dips, back above at 600s (too soon), and at 4000s.
+    for close, now in ((101, 0), (99, 300), (102, 600), (99, 3000), (103, 4000)):
+        fire, state = decide(rule, rule.evaluate(bars(close)), state, now)
+        fired.append(fire)
+    assert fired == [True, False, False, False, True]
+    assert state["last_fired"] == 4000
+
+
+def test_cooldown_holds_back_event_alerts():
+    rule = Rule.from_dict({"kind": "new_high", "bars": 2, "cooldown": "1d"})
+    fire1, state = decide(rule, rule.evaluate(bars(1, 2)), None, now=0)
+    fire2, state = decide(rule, rule.evaluate(bars(1, 2, 3)), state, now=3600)  # new bar, new high, too soon
+    fire3, state = decide(rule, rule.evaluate(bars(1, 2, 3, 4)), state, now=90000)
+    assert (fire1, fire2, fire3) == (True, False, True)
+
+
+def test_without_cooldown_last_fired_is_still_recorded():
+    rule = Rule.from_dict({"kind": "price_above", "value": 1})
+    fire, state = decide(rule, rule.evaluate(bars(2)), None, now=123)
+    assert fire and state == {"active": True, "last_fired": 123}

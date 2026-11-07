@@ -43,3 +43,8 @@ source = "stooq"
   [[watch.rule]]
   kind = "price_below"
   value = 500
+
+  [[watch.rule]]
+  kind = "new_low"       # lowest close in 60 bars...
+  bars = 60
+  cooldown = "1d"        # ...but at most one alert a day
