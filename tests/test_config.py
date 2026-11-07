@@ -54,3 +54,10 @@ def test_bad_watchlists_are_explained(text, message):
 def test_load_config_missing_file_suggests_init(tmp_path):
     with pytest.raises(ConfigError, match="signalwatch init"):
         load_config(tmp_path / "nope.toml")
+
+
+def test_examples_file_matches_init_output():
+    from pathlib import Path
+
+    example_file = Path(__file__).parent.parent / "examples" / "watchlist.toml"
+    assert example_file.read_text(encoding="utf-8") == EXAMPLE
