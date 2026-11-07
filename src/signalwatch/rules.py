@@ -165,6 +165,11 @@ class Rule:
         )
 
 
+def format_price(value: float) -> str:
+    """71274.08 -> "71,274.08"; small prices keep their precision (0.00001234 -> "1.234e-05")."""
+    return f"{value:,.2f}" if abs(value) >= 1 else f"{value:.6g}"
+
+
 @dataclass(frozen=True)
 class Alert:
     symbol: str
@@ -175,7 +180,7 @@ class Alert:
 
     def text(self) -> str:
         note = f" ({self.rule.note})" if self.rule.note else ""
-        return f"{self.symbol}: {self.message}{note}. Last price {self.price:g} at {self.time}."
+        return f"{self.symbol}: {self.message}{note}. Last price {format_price(self.price)} at {self.time}."
 
 
 def rule_id(symbol: str, rule: Rule) -> str:

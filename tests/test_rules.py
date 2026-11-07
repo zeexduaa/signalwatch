@@ -1,6 +1,6 @@
 import pytest
 
-from signalwatch.rules import Alert, Bar, Rule, RuleError, decide, rule_id
+from signalwatch.rules import Alert, Bar, Rule, RuleError, decide, format_price, rule_id
 
 
 def bars(*closes, start=1):
@@ -102,7 +102,7 @@ def test_rule_id_and_alert_text():
     rule = Rule.from_dict({"kind": "rsi_below", "value": 30, "note": "oversold"})
     assert rule_id("BTCUSDT", rule) != rule_id("ETHUSDT", rule)
     alert = Alert("BTCUSDT", rule, "RSI(14) is 28.4, RSI(14) below 30", 61000.5, "2026-11-07")
-    assert alert.text() == "BTCUSDT: RSI(14) is 28.4, RSI(14) below 30 (oversold). Last price 61000.5 at 2026-11-07."
+    assert alert.text() == "BTCUSDT: RSI(14) is 28.4, RSI(14) below 30 (oversold). Last price 61,000.50 at 2026-11-07."
 
 
 def test_describe():
@@ -112,3 +112,10 @@ def test_describe():
     assert Rule.from_dict({"kind": "change_above", "value": 7.5, "bars": 3}).describe() == (
         "up 7.5% or more over 3 bar(s)"
     )
+
+
+def test_format_price():
+    assert format_price(71274.084) == "71,274.08"
+    assert format_price(1) == "1.00"
+    assert format_price(0.00001234) == "1.234e-05"
+    assert format_price(0.5) == "0.5"

@@ -94,9 +94,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     last = bars[-1]
 
     def fmt(value: float | None, suffix: str = "") -> str:
-        return "not enough history" if value is None else f"{value:,.4g}{suffix}"
+        if value is None:
+            return "not enough history"
+        return f"{value:,.2f}{suffix}" if abs(value) >= 1 or suffix else f"{value:.6g}"
 
-    print(f"{args.symbol.upper()} ({args.source}, {args.interval} bars), last close {last.close:,.6g} at {last.time}")
+    print(f"{args.symbol.upper()} ({args.source}, {args.interval} bars), last close {fmt(last.close)} at {last.time}")
     for period in (20, 50, 200):
         print(f"  SMA {period:<4} {fmt(sma(closes, period)[-1])}")
     print(f"  RSI 14   {fmt(rsi(closes, 14)[-1])}")

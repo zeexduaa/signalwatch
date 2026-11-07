@@ -71,9 +71,9 @@ def test_missing_discord_webhook_is_explained(tmp_path, capsys, offline, monkeyp
 def test_show(capsys, offline):
     assert main(["show", "spy.us", "--source", "stooq"]) == 0
     out = capsys.readouterr().out
-    assert "SPY.US (stooq, 1d bars), last close 130" in out
+    assert "SPY.US (stooq, 1d bars), last close 130.00" in out
     assert "SMA 20" in out and "SMA 200  not enough history" in out
-    assert "RSI 14   100" in out
+    assert "RSI 14   100.00" in out
 
 
 def test_parse_every():

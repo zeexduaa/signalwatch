@@ -49,7 +49,7 @@ def test_alerts_once_then_stays_quiet():
     second = run_round(CONFIG, state, [rec.notifier()], get=market)
     assert [a.symbol for a in first.alerts] == ["aaa.us"]
     assert second.alerts == []
-    assert rec.sent == ["aaa.us: price 101 is price above 100. Last price 101 at 2026-10-02."]
+    assert rec.sent == ["aaa.us: price 101 is price above 100. Last price 101.00 at 2026-10-02."]
 
 
 def test_one_bad_symbol_does_not_stop_the_others():
