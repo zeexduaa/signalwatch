@@ -13,7 +13,7 @@ from typing import Any
 from .config import Config
 from .notify import NotifyError, Notifier
 from .providers import Fetcher, ProviderError, fetch_bars
-from .rules import Alert, decide, rule_id
+from .rules import Alert, decide, legacy_rule_id, rule_id
 
 DEFAULT_STATE = ".signalwatch/state.json"
 
@@ -82,8 +82,13 @@ def run_round(
             evaluation = rule.evaluate(bars)
             if evaluation is None:
                 continue  # not enough history for this rule yet
-            key = rule_id(watch.symbol, rule)
-            fire, new_state = decide(rule, evaluation, state.get(key), now)
+            key = rule_id(watch.symbol, rule, watch.source, watch.interval)
+            previous = state.get(key)
+            if previous is None:
+                # State saved by an older version used a shorter key; carry it over once.
+                legacy = legacy_rule_id(watch.symbol, rule)
+                previous = state.get(legacy) if dry_run else state.pop(legacy, None)
+            fire, new_state = decide(rule, evaluation, previous, now)
             if not dry_run:
                 state[key] = new_state
             if fire:

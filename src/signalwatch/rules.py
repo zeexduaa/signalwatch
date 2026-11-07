@@ -131,8 +131,8 @@ class Rule:
         """Short human description, e.g. "RSI(14) above 70" or "price crosses above sma:200"."""
         v = self.value
         return {
-            "price_above": f"price above {v:g}" if v is not None else "",
-            "price_below": f"price below {v:g}" if v is not None else "",
+            "price_above": f"price above {format_price(v)}" if v is not None else "",
+            "price_below": f"price below {format_price(v)}" if v is not None else "",
             "rsi_above": f"RSI({self.period}) above {v:g}" if v is not None else "",
             "rsi_below": f"RSI({self.period}) below {v:g}" if v is not None else "",
             "change_above": f"up {v:g}% or more over {self.bars} bar(s)" if v is not None else "",
@@ -153,7 +153,7 @@ class Rule:
         if self.kind in ("price_above", "price_below"):
             assert self.value is not None
             active = last > self.value if self.kind == "price_above" else last < self.value
-            return Evaluation(active, None, f"price {last:g} is {self.describe()}")
+            return Evaluation(active, None, f"price {format_price(last)} is {self.describe()}")
 
         if self.kind in ("rsi_above", "rsi_below"):
             assert self.value is not None
@@ -179,7 +179,9 @@ class Rule:
                 made = last > max(earlier)
             else:
                 made = last < min(earlier)
-            return Evaluation(made, bars[-1].time if made else None, f"price {last:g} is the {self.describe()}")
+            return Evaluation(
+                made, bars[-1].time if made else None, f"price {format_price(last)} is the {self.describe()}"
+            )
 
         # Cross rules: compare the last two bars.
         assert self.over is not None
@@ -196,7 +198,7 @@ class Rule:
         return Evaluation(
             crossed,
             bars[-1].time if crossed else None,
-            f"{self.describe()} ({a_now:g} vs {b_now:g})",
+            f"{self.describe()} ({format_price(a_now)} vs {format_price(b_now)})",
         )
 
 
@@ -218,10 +220,22 @@ class Alert:
         return f"{self.symbol}: {self.message}{note}. Last price {format_price(self.price)} at {self.time}."
 
 
-def rule_id(symbol: str, rule: Rule) -> str:
-    """Stable key for remembering a rule's state between runs."""
-    parts = [symbol, rule.kind, rule.line, rule.over or "", f"{rule.value}", str(rule.period), str(rule.bars)]
-    return "|".join(parts)
+def rule_id(symbol: str, rule: Rule, source: str = "", interval: str = "") -> str:
+    """Stable key for remembering a rule's state between runs.
+
+    It includes the source and interval, so the same symbol watched on two intervals
+    (or from two sources) keeps separate state.
+    """
+    return "|".join([f"{source}:{symbol}@{interval}", *_rule_parts(rule)])
+
+
+def legacy_rule_id(symbol: str, rule: Rule) -> str:
+    """The key used before 0.1.1, without source and interval; read once when upgrading."""
+    return "|".join([symbol, *_rule_parts(rule)])
+
+
+def _rule_parts(rule: Rule) -> list[str]:
+    return [rule.kind, rule.line, rule.over or "", f"{rule.value}", str(rule.period), str(rule.bars)]
 
 
 def decide(

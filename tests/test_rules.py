@@ -1,6 +1,16 @@
 import pytest
 
-from signalwatch.rules import Alert, Bar, Rule, RuleError, decide, format_price, parse_duration, rule_id
+from signalwatch.rules import (
+    Alert,
+    Bar,
+    Rule,
+    RuleError,
+    decide,
+    format_price,
+    legacy_rule_id,
+    parse_duration,
+    rule_id,
+)
 
 
 def bars(*closes, start=1):
@@ -130,7 +140,7 @@ def test_new_high_and_low():
     assert high.bars == 4 and high.is_event
     ev = high.evaluate(bars(5, 3, 4, 6))
     assert ev is not None and ev.active and ev.event == "2026-01-04"
-    assert ev.message == "price 6 is the highest close in 4 bars"
+    assert ev.message == "price 6.00 is the highest close in 4 bars"
     assert not high.evaluate(bars(5, 3, 4, 5)).active  # equal to the old high isn't a new one
     assert low.evaluate(bars(5, 3, 4, 2)).active
     assert not low.evaluate(bars(9, 1, 4, 2)).active  # 1 was lower, within the window
@@ -173,3 +183,23 @@ def test_without_cooldown_last_fired_is_still_recorded():
     rule = Rule.from_dict({"kind": "price_above", "value": 1})
     fire, state = decide(rule, rule.evaluate(bars(2)), None, now=123)
     assert fire and state == {"active": True, "last_fired": 123}
+
+
+def test_messages_keep_full_prices():
+    # Regression test for #26: messages used to round to 6 significant digits.
+    ev = Rule.from_dict({"kind": "price_above", "value": 100000.5}).evaluate(bars(101234.56))
+    assert ev.message == "price 101,234.56 is price above 100,000.50"
+    cross = Rule.from_dict({"kind": "cross_above", "over": "sma:2"}).evaluate(bars(100000, 99000, 123456.78))
+    assert cross.message.endswith("(123,456.78 vs 111,228.39)")
+
+
+def test_rule_id_includes_source_and_interval():
+    # Regression test for #24.
+    rule = Rule.from_dict({"kind": "price_above", "value": 1})
+    keys = {
+        rule_id("BTCUSDT", rule, "binance", "1d"),
+        rule_id("BTCUSDT", rule, "binance", "4h"),
+        rule_id("BTCUSDT", rule, "stooq", "1d"),
+    }
+    assert len(keys) == 3
+    assert legacy_rule_id("BTCUSDT", rule) not in keys

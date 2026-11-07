@@ -28,7 +28,7 @@ def test_check_alerts_then_remembers(tmp_path, capsys, offline):
     state = tmp_path / "state.json"
     assert main(["check", "-c", str(config), "--state", str(state)]) == 0
     out = capsys.readouterr().out
-    assert "ALERT  spy.us: price 130 is price above 120" in out
+    assert "ALERT  spy.us: price 130.00 is price above 120.00" in out
     assert "checked 1 of 1 symbol(s), 1 alert(s)" in out
     assert main(["check", "-c", str(config), "--state", str(state)]) == 0
     assert "0 alert(s)" in capsys.readouterr().out
@@ -96,3 +96,10 @@ def test_watch_runs_until_ctrl_c(tmp_path, capsys, offline, monkeypatch):
     assert main(["watch", "-c", str(config), "--state", str(tmp_path / "s.json"), "--every", "5m"]) == 0
     out = capsys.readouterr().out
     assert "Checking every 5 minute(s)" in out and "1 alert(s)" in out and "Stopped." in out
+
+
+def test_show_with_no_closed_bars_explains_instead_of_crashing(capsys, monkeypatch):
+    # Regression test for #25: this used to raise IndexError.
+    monkeypatch.setattr(providers, "http_get", lambda url: "[]")
+    assert main(["show", "newcoin"]) == 2
+    assert "no closed 1d bars for NEWCOIN yet" in capsys.readouterr().err
